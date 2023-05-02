@@ -8,15 +8,15 @@ from os import getcwd
 import numpy as np
 import datetime
 import locale
+from pygrabber.dshow_graph import FilterGraph
+from tktimepicker import SpinTimePickerOld, constants, AnalogPicker
 
-default_camera = 3
-default_jam_masuk = "07:00"
 
 locale.setlocale(locale.LC_TIME, "id_ID")
 face_classifier = cv2.CascadeClassifier(
     'Haarcascades/haarcascade_frontalface_default.xml')
 recognizer = cv2.face.LBPHFaceRecognizer_create()
-minimal_jam_masuk = datetime.datetime.strptime(default_jam_masuk, "%H:%M")
+graph = FilterGraph()
 
 
 class App:
@@ -31,7 +31,20 @@ class App:
 
     def start(self):
         recognizer.read('Training/trainner.yml')
+        self.update_setting()
         self.window.mainloop()
+
+    def update_setting(self):
+        with open(getcwd() + "/Data/setting.csv", "r") as csv_file:
+            csv_reader = csv.reader(csv_file)
+            for row in csv_reader:
+                if row[0] == "camera":
+                    self.default_camera = int(row[1])
+                if row[0] == "jam_masuk":
+                    self.default_jam_masuk = row[1]
+
+        self.minimal_jam_masuk = datetime.datetime.strptime(
+            self.default_jam_masuk, "%H:%M")
 
     def update_jam(self):
         self.label_jam.configure(
@@ -41,23 +54,27 @@ class App:
     def main_page(self):
         label_judul = Label(self.window, text="Absensi Siswa",
                             font=("Arial", 20), bg="white")
-        label_judul.place(anchor="center", relx=.5, rely=.3)
+        label_judul.place(anchor="center", relx=.5, rely=.2)
 
         self.label_jam = Label(self.window, text=datetime.datetime.now().strftime("%A, %d %B %Y %H:%M:%S"),
                                font=("Arial", 16), bg="white")
-        self.label_jam.place(anchor="center", relx=.5, rely=.4)
+        self.label_jam.place(anchor="center", relx=.5, rely=.3)
 
         button_absen_siswa = Button(self.window, text="Absen Siswa",
                                     font=("Arial", 16), bg="#126935", fg="white", borderwidth=0, cursor="hand2", width=30, command=self.absen_siswa_page)
-        button_absen_siswa.place(anchor="center", relx=.5, rely=.55)
+        button_absen_siswa.place(anchor="center", relx=.5, rely=.45)
 
         button_daftar_siswa = Button(self.window, text="Daftar Siswa Baru",
                                      font=("Arial", 16), bg="#126935", fg="white", borderwidth=0, cursor="hand2", width=30, command=self.daftar_siswa_page)
-        button_daftar_siswa.place(anchor="center", relx=.5, rely=.7)
+        button_daftar_siswa.place(anchor="center", relx=.5, rely=.6)
 
         button_report_sabsen = Button(self.window, text="Laporan Absen",
                                       font=("Arial", 16), bg="#126935", fg="white", borderwidth=0, cursor="hand2", width=30, command=self.report_absen_page)
-        button_report_sabsen.place(anchor="center", relx=.5, rely=.85)
+        button_report_sabsen.place(anchor="center", relx=.5, rely=.75)
+
+        button_setting = Button(self.window, text="Setting",
+                                font=("Arial", 16), bg="gray", fg="white", borderwidth=0, cursor="hand2", width=30, command=self.setting_page)
+        button_setting.place(anchor="center", relx=.5, rely=.9)
 
         self.update_jam()
 
@@ -113,7 +130,7 @@ class App:
         self.label_error.configure(text="")
 
         self.scan_wajah_window = Toplevel(self.new_siswa_window)
-        self.camera = cv2.VideoCapture(default_camera)
+        self.camera = cv2.VideoCapture(self.default_camera)
 
         content = ttk.Frame(self.scan_wajah_window, padding=20)
         content.grid(column=0, row=0)
@@ -165,6 +182,8 @@ class App:
             cv2.destroyAllWindows()
 
     def closing_scan_camera(self):
+        if not hasattr(self, "scan_wajah_window"):
+            return
         self.scan_wajah_window.destroy()
         self.camera.release()
         cv2.destroyAllWindows()
@@ -199,7 +218,8 @@ class App:
             open(getcwd() + "/Data/Absen/" + self.format_date_now + ".csv", "x")
 
         self.absen_siswa_window = Toplevel(self.window)
-        self.camera = cv2.VideoCapture(default_camera)
+        self.absen_siswa_window.resizable(0, 0)
+        self.camera = cv2.VideoCapture(self.default_camera)
 
         content = ttk.Frame(self.absen_siswa_window, padding=20)
         content.grid(column=0, row=0)
@@ -259,6 +279,8 @@ class App:
         self.label_absen_wajah.after(20, self.absen_siswa_camera)
 
     def closing_absen_camera(self):
+        if not hasattr(self, "absen_siswa_window"):
+            return
         self.absen_siswa_window.destroy()
         self.camera.release()
         cv2.destroyAllWindows()
@@ -361,7 +383,7 @@ class App:
             jam_masuk = siswa[2]
             format_jam_masuk = datetime.datetime.strptime(
                 jam_masuk, "%H:%M:%S")
-            telat = format_jam_masuk.time() >= minimal_jam_masuk.time()
+            telat = format_jam_masuk.time() >= self.minimal_jam_masuk.time()
             self.list_box_siswa.insert(
                 END,  nis + " - " + nama + " - " + jam_masuk + " - " + ("Telat" if telat else "Tepat Waktu"))
             self.list_box_siswa.itemconfigure(
@@ -378,6 +400,59 @@ class App:
             self.list_box_date.insert(END, str(tanggal))
 
         self.list_box_date.selection_set(0)
+
+    def setting_page(self):
+        self.closing_scan_camera()
+        self.closing_absen_camera()
+
+        self.setting_window = Toplevel(self.window)
+        self.list_camera = graph.get_input_devices()
+
+        content = ttk.Frame(self.setting_window, padding=20)
+        content.grid(column=0, row=0)
+
+        judu_setting = ttk.Label(
+            content, text="Pengaturan", font=("Arial", 16))
+        judu_setting.grid(column=0, row=0)
+
+        label_default_jam = ttk.Label(
+            content, text="Jam Masuk", font=("Arial", 12))
+        label_default_jam.grid(column=0, row=1, pady=10)
+        self.choosed_time = AnalogPicker(content, type=constants.HOURS24)
+        self.choosed_time.setHours(self.minimal_jam_masuk.hour)
+        self.choosed_time.setMinutes(self.minimal_jam_masuk.minute)
+        self.choosed_time.grid(column=1, row=1, padx=10, columnspan=2, pady=10)
+
+        label_default_camera = ttk.Label(
+            content, text="Default Camera", font=("Arial", 12))
+        label_default_camera.grid(column=0, row=2, pady=10)
+
+        self.choosed_camera = StringVar()
+        print(self.list_camera[self.default_camera])
+
+        self.option_default_camera = ttk.OptionMenu(
+            content, self.choosed_camera, self.list_camera[0],  *self.list_camera)
+        self.choosed_camera.set(self.list_camera[self.default_camera])
+        self.option_default_camera.grid(
+            column=1, row=2, padx=10, columnspan=2, pady=10)
+
+        button_save = ttk.Button(content, text="Save",
+                                 command=self.set_default_camera)
+        button_save.grid(column=1, row=3, columnspan=2, pady=10)
+
+    def set_default_camera(self):
+        camera = self.choosed_camera.get()
+        jam = self.choosed_time.time()
+        idx_camera = self.list_camera.index(camera)
+        format_jam = "{}:{}".format(*jam)
+
+        with open(getcwd() + "/Data/setting.csv", "w") as csv_file:
+            csv_writer = csv.writer(csv_file, delimiter=",")
+            csv_file.write("camera" + "," + str(idx_camera))
+            csv_file.write("\njam_masuk" + "," + format_jam)
+
+        self.update_setting()
+        self.setting_window.destroy()
 
 
 app = App()
